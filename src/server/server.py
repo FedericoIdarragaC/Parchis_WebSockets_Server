@@ -7,6 +7,7 @@ from src.player.player import Player
 
 class Server:
     CONNS = set()
+    STATE = {"value":0}
     PLAYERS = []
 
     def __init__(self,port):
@@ -19,39 +20,47 @@ class Server:
             print("--------- Server running in port: "+self.port+" ---------")
             await asyncio.Future() 
 
+    def state_event(self):
+        return json.dumps({"type": "state", **self.STATE})
      
     async def __manageConnections(self,websocket,path):
         print("----New connection----")
         try: 
             self.CONNS.add(websocket)
-
             await websocket.send(json.dumps({"type": "state", "state":"connected"}))
-
+    
             init_msg = await websocket.recv()
             data = json.loads(init_msg)
 
-            player = Player(len(self.PLAYERS) + 1,data["username"],websocket, random.randint(0,3))
-            #TODO: Select color by dice
-            self.PLAYERS.append(player)
-            
-            print("New player: "+player.username)
-
-            await websocket.send(json.dumps({"player":{
-                "id":player.id,
-                "username":player.username,
-                "color":player.color
-            }}))
+            if len(self.PLAYERS) < 4:
+                # TODO: Select color by dice
+                player = Player(len(self.PLAYERS) + 1,data["username"],websocket, random.randint(0,3))
+                self.PLAYERS.append(player)
+                
+                await self.broadcastPlayers(
+                    json.dumps({"type": "new player",
+                    "player":{
+                    "id":player.id,
+                    "username":player.username,
+                    "color":player.color
+                }}))     
+            else:
+                await websocket.send(json.dumps({"type": "error", "error message":"No more players available"}))       
 
             async for message in websocket:
-                data = json.loads(message)
-                print(data)
+                print("Message: " + message)
+                self.STATE["value"] += 1
+                websockets.broadcast(self.CONNS, self.state_event())
 
 
-        finally:
+        except websockets.exceptions.ConnectionClosedError:
             self.CONNS.remove(websocket)
-            self.PLAYERS.remove(player)
             print("----Connection closed----")
-            
+        
+    async def broadcastPlayers(self,message):
+        for player in self.PLAYERS:
+            await player.sendMessage(message)
+
 
         
         
