@@ -25,6 +25,7 @@ class Server:
      
     async def __manageConnections(self,websocket,path):
         print("----New connection----")
+        player = any
         try: 
             self.CONNS.add(websocket)
             await websocket.send(json.dumps({"type": "state", "state":"connected"}))
@@ -37,24 +38,27 @@ class Server:
                 player = Player(len(self.PLAYERS) + 1,data["username"],websocket, random.randint(0,3))
                 self.PLAYERS.append(player)
                 
-                await self.broadcastPlayers(
-                    json.dumps({"type": "new player",
-                    "player":{
-                    "id":player.id,
-                    "username":player.username,
-                    "color":player.color
-                }}))     
+                for player in self.PLAYERS:
+                    await self.broadcastPlayers(
+                        json.dumps({"type": "new player",
+                        "player":{
+                        "id":player.id,
+                        "username":player.username,
+                        "color":player.color
+                    }}))     
             else:
                 await websocket.send(json.dumps({"type": "error", "error message":"No more players available"}))       
 
             async for message in websocket:
-                print("Message: " + message)
-                self.STATE["value"] += 1
-                websockets.broadcast(self.CONNS, self.state_event())
-
+                for ply in self.PLAYERS:
+                    if ply.connection == websocket:
+                        print("Message form player: ",ply.id," -> ",message)
+                        
+                    
 
         except websockets.exceptions.ConnectionClosedError:
             self.CONNS.remove(websocket)
+            self.PLAYERS.remove(player)
             print("----Connection closed----")
         
     async def broadcastPlayers(self,message):

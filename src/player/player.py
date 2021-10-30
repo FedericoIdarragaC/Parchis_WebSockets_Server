@@ -1,6 +1,6 @@
-
 import asyncio
 import websockets
+
 class Pawn:
     def __init__(self,id,position):
         self.id = id
@@ -9,7 +9,8 @@ class Pawn:
     def getPosition(self):
         return self.position
 
-class Player:
+
+class Player():
     def __init__(self,id,username,connection,color):
         self.id = id
         self.username = username
@@ -26,6 +27,5 @@ class Player:
     async def sendMessage(self,message):
         await self.connection.send(message)
 
-    async def reciveMessage(self):
+    async def receiveMessage(self):
         return await self.connection.recv()
-        
