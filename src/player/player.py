@@ -16,6 +16,7 @@ class Player():
         self.username = username
         self.connection = connection
         self.color = color
+        self.start_status = False
 
         self.pawns = [Pawn(n,color) for n in range(4)]
          
@@ -29,3 +30,6 @@ class Player():
 
     async def receiveMessage(self):
         return await self.connection.recv()
+
+    def jsonInfo(self):
+        return {"id":self.id,"username":self.username,"color":self.color}
