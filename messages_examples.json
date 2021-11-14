@@ -1,0 +1,15 @@
+{
+    "new player":
+    {
+        "username":"fede"
+    }
+    ,
+    "accept start game":
+    {
+        "start_status":"true"
+    }
+    "roll the dice":
+    {
+        "operation":1
+    }
+}

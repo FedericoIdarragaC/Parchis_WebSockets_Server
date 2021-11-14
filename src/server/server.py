@@ -1,8 +1,11 @@
 import asyncio
+from json.decoder import JSONDecodeError
 import websockets
 import json
 import random
 import threading
+import time
+
 
 from src.player.player import Player
 class Server:
@@ -12,6 +15,8 @@ class Server:
     PLAYERS_QUEUE = []
     COLOR = 0
     STARTED = False
+    BLOCKED = False
+    TIME_BLOCKED = 0
 
     def __init__(self,port):
         self.port = port
@@ -31,34 +36,46 @@ class Server:
         try: 
             self.CONNS.add(websocket)
             if new:
-                await websocket.send(json.dumps({"type": "state", "message":"Connected"}))
+                await websocket.send(json.dumps({"type": "connection state", "message":"Connected"}))
         
                 init_msg = await websocket.recv()
                 data = json.loads(init_msg)
                 await self.createPlayer(data,websocket)
             else:
-                await websocket.send(json.dumps({"type": "state", "message":"Re-connected"}))
+                await websocket.send(json.dumps({"type": "connection state", "message":"Re-connected"}))
 
             async for message in websocket: 
                 if len(self.PLAYERS) < 2:
                     await websocket.send(json.dumps({"type": "alert", "message":"Not enough players"}))
                 else:
                     if self.STARTED:
-                        await self.gameFlow(websocket,message)
+                        timeSinceBlocked = time.time() - self.TIME_BLOCKED
+                        if timeSinceBlocked > 30:
+                            self.BLOCKED = False
+
+                        if not self.BLOCKED:
+                            await self.gameFlow(websocket,message)
+                        else:
+                            await websocket.send(json.dumps({"type": "alert", "message":"Waiting"}))
                     else:
                         await self.startGame(websocket,message)
 
             
         except websockets.exceptions.ConnectionClosedError:
             self.CONNS.remove(websocket)
+            print("----Connection closed----")
             for ply in self.PLAYERS:
                 if ply.connection == websocket:
                     self.PLAYERS.remove(ply)
-            print("----Connection closed----")
+                    print("----Connection closed----")
+                    print("Player disconnected: " + ply.username +  " id: ",ply.id)
+                    await self.broadcastPlayers(json.dumps({"type": "player disconnected","player":ply.jsonInfo()}))
         
-        except KeyError:    
+        
+        except (KeyError,JSONDecodeError):
             await websocket.send(json.dumps({"type": "error", "message":"Bad request"}))
             await self.__manageConnections(websocket,path,False)
+            
         
     async def gameFlow(self,websocket,message):
         for ply in self.PLAYERS:
@@ -70,7 +87,16 @@ class Server:
                 else:
                     self.PLAYERS.insert(0,turn_player)
                     print("Message form player: ",ply.username," -> ",message)
-                    await self.broadcastPlayers(json.dumps({"type": "state", "message":"message"}))
+                    data = json.loads(message)
+                    if data["operation"] == 1:
+                        await ply.rollTheDice()
+                        self.BLOCKED = True
+                        self.TIME_BLOCKED = time.time()
+                        message2 = await ply.connection.recv()                        
+                        print(message2)
+                        self.BLOCKED = False
+                        
+                    #await self.broadcastPlayers(json.dumps({"type": "state", "message":"message"}))
 
     async def startGame(self,websocket,message):
         for ply in self.PLAYERS:
@@ -87,7 +113,19 @@ class Server:
                                 starts_count += 1
                         if starts_count == len(self.PLAYERS):
                             await self.broadcastPlayers(json.dumps({"type": "state", "message":"The game has started"}))
+                            print("----Game started----")
                             self.STARTED = True
+                            await self.PlayersStatusBroadcast()
+
+    async def PlayersStatusBroadcast(self):
+        players_status = []
+        for player in self.PLAYERS:
+            players_status.append(player.pawnsStatus())
+        
+        await self.broadcastPlayers(
+            json.dumps({"type": "players status",
+            "status":players_status
+        }))   
 
     async def broadcastPlayers(self,message):
         for player in self.PLAYERS:
