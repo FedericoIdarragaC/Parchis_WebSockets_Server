@@ -56,12 +56,12 @@ class Server:
                         if not self.BLOCKED:
                             await self.gameFlow(websocket,message)
                         else:
-                            await websocket.send(json.dumps({"type": "alert", "message":"Waiting"}))
+                            await websocket.send(json.dumps({"type": "waiting", "message":"Waiting for antoher player message"}))
                     else:
                         await self.startGame(websocket,message)
 
             
-        except websockets.exceptions.ConnectionClosedError:
+        except (websockets.exceptions.ConnectionClosedError,websockets.exceptions.ConnectionClosedOK):
             self.CONNS.remove(websocket)
             print("----Connection closed----")
             for ply in self.PLAYERS:
@@ -88,12 +88,24 @@ class Server:
                     self.PLAYERS.insert(0,turn_player)
                     print("Message form player: ",ply.username," -> ",message)
                     data = json.loads(message)
+
                     if data["operation"] == 1:
                         await ply.rollTheDice()
+                        # Exits pawns from the jail at the start
+
+                        #Moving pawns (Wait for player moves distribution)
                         self.BLOCKED = True
                         self.TIME_BLOCKED = time.time()
                         message2 = await ply.connection.recv()                        
-                        print(message2)
+                        data = json.loads(message2)
+
+                        if data["operation"] == 2:
+                            result = ply.move_pawns_operation(data)
+                            if result:
+                                await websocket.send(json.dumps({"type": "moved", "message":"pawns moved"}))
+                                await self.PlayersStatusBroadcast()
+                            else:
+                                await websocket.send(json.dumps({"type": "error", "message":"error moving pawns"}))
                         self.BLOCKED = False
                         
                     #await self.broadcastPlayers(json.dumps({"type": "state", "message":"message"}))
@@ -105,7 +117,7 @@ class Server:
                     data = json.loads(message)
                     if data["start_status"] == "true":
                         ply.start_status = True
-                        await self.broadcastPlayers(json.dumps({"type": "state", "message":'Player {} accepted to start the game'.format(ply.username)}))
+                        await self.broadcastPlayers(json.dumps({"type": "start accepted", "message":ply.jsonInfo()}))
 
                         starts_count = 0
                         for pl in self.PLAYERS:
@@ -135,7 +147,7 @@ class Server:
         if len(self.PLAYERS) < 4 and not self.STARTED:
                 player = Player(len(self.PLAYERS) + 1,data["username"],websocket, self.COLOR)
                 self.COLOR+=1
-                self.PLAYERS.append(player)
+                self.PLAYERS.insert(0,player)
                 
                 players_json = []
                 for player in self.PLAYERS:

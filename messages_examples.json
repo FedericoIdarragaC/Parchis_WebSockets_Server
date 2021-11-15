@@ -1,15 +1,23 @@
 {
     "new player":
     {
-        "username":"fede"
+        "username":"test_usr"
     }
     ,
     "accept start game":
     {
         "start_status":"true"
     }
+    ,
     "roll the dice":
     {
         "operation":1
+    }
+    ,
+    "move pawn":
+    {
+        "operation":2,
+        "pawn_1":1,
+        "pawn_2":2
     }
 }
