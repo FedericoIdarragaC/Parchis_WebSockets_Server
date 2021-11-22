@@ -10,11 +10,12 @@ import time
 from src.player.player import Player
 class Server:
     CONNS = set()
-    STATE = {"value":0}
     PLAYERS = []
     PLAYERS_QUEUE = []
+    DICES_START = []
     COLOR = 0
     STARTED = False
+    POSITIONS_DEFINED = False
     BLOCKED = False
     TIME_BLOCKED = 0
 
@@ -27,9 +28,6 @@ class Server:
         async with websockets.serve(self.__manageConnections, "localhost", 8081):
             print("--------- Server running in port: "+self.port+" ---------")
             await asyncio.Future() 
-
-    def state_event(self):
-        return json.dumps({"type": "state", **self.STATE})
      
     async def __manageConnections(self,websocket,path,new=True):
         print("----New connection----")
@@ -40,7 +38,8 @@ class Server:
         
                 init_msg = await websocket.recv()
                 data = json.loads(init_msg)
-                await self.createPlayer(data,websocket)
+                if len(data["username"]) > 0:
+                    await self.createPlayer(data,websocket)
             else:
                 await websocket.send(json.dumps({"type": "connection state", "message":"Re-connected"}))
 
@@ -73,42 +72,52 @@ class Server:
         
         
         except (KeyError,JSONDecodeError):
+            for ply in self.PLAYERS:
+                if ply.connection == websocket:
+                    self.PLAYERS.remove(ply)
+                    self.PLAYERS.insert(0,ply)
             await websocket.send(json.dumps({"type": "error", "message":"Bad request"}))
-            await self.__manageConnections(websocket,path,False)
-            
-        
+            await self.__manageConnections(websocket,path,True)            
+             
     async def gameFlow(self,websocket,message):
         for ply in self.PLAYERS:
             if ply.connection == websocket:
-                turn_player = self.PLAYERS.pop()
+                turn_player = self.PLAYERS[len(self.PLAYERS)-1]
                 if turn_player != ply:
-                    self.PLAYERS.append(turn_player)
+                    #self.PLAYERS.append(turn_player)
                     await websocket.send(json.dumps({"type": "alert", "message":"Is not your turn"}))
                 else:
+                    self.PLAYERS.remove(turn_player)
                     self.PLAYERS.insert(0,turn_player)
                     print("Message form player: ",ply.username," -> ",message)
                     data = json.loads(message)
-
+                    
                     if data["operation"] == 1:
-                        await ply.rollTheDice()
-                        # Exits pawns from the jail at the start
 
-                        #Moving pawns (Wait for player moves distribution)
-                        self.BLOCKED = True
-                        self.TIME_BLOCKED = time.time()
-                        message2 = await ply.connection.recv()                        
-                        data = json.loads(message2)
+                        if self.POSITIONS_DEFINED:
+                            await ply.rollTheDice(define_pos=False)
+                            #Moving pawns (Wait for player moves distribution)
+                            self.BLOCKED = True
+                            self.TIME_BLOCKED = time.time()
+                            message2 = await ply.connection.recv()                        
+                            data = json.loads(message2)
 
-                        if data["operation"] == 2:
-                            result = ply.move_pawns_operation(data)
-                            if result:
-                                await websocket.send(json.dumps({"type": "moved", "message":"pawns moved"}))
-                                await self.PlayersStatusBroadcast()
-                            else:
-                                await websocket.send(json.dumps({"type": "error", "message":"error moving pawns"}))
-                        self.BLOCKED = False
-                        
-                    #await self.broadcastPlayers(json.dumps({"type": "state", "message":"message"}))
+                            if data["operation"] == 2:
+                                result = ply.move_pawns_operation(data)
+                                if result:
+                                    await websocket.send(json.dumps({"type": "moved", "message":"pawns moved"}))
+                                    await self.PlayersStatusBroadcast()
+                                else:
+                                    await websocket.send(json.dumps({"type": "error", "message":"error moving pawns"}))
+                            self.BLOCKED = False
+                        else:
+                            await ply.rollTheDice(define_pos=True)
+                            self.DICES_START.append({"player_id":ply.id,"dice_result":ply.dice[0]+ply.dice[1]})
+                            if len(self.DICES_START) == len(self.PLAYERS):
+                                await self.define_players_order()
+
+                        turn_player = self.PLAYERS[len(self.PLAYERS)-1]
+                        await self.broadcastPlayers(json.dumps({"type": "current turn", "message":turn_player.jsonInfo()}))
 
     async def startGame(self,websocket,message):
         for ply in self.PLAYERS:
@@ -127,7 +136,29 @@ class Server:
                             await self.broadcastPlayers(json.dumps({"type": "state", "message":"The game has started"}))
                             print("----Game started----")
                             self.STARTED = True
+                            turn_player = self.PLAYERS[len(self.PLAYERS)-1]
                             await self.PlayersStatusBroadcast()
+                            await self.broadcastPlayers(json.dumps({"type": "current turn", "message":turn_player.jsonInfo()}))
+
+    def get_dice_result(self,dice_start):
+        return dice_start.get('dice_result')
+
+    def get_player_by_id(self,id):
+        for ply in self.PLAYERS:
+            if ply.id == id:
+                return ply
+
+    async def define_players_order(self):
+        self.DICES_START.sort(key=self.get_dice_result)
+        print(self.DICES_START)
+        for ds in self.DICES_START:
+            self.PLAYERS_QUEUE.append(self.get_player_by_id(ds['player_id']))
+
+        self.PLAYERS = self.PLAYERS_QUEUE  
+        turn_player = self.PLAYERS[len(self.PLAYERS)-1]
+        await self.broadcastPlayers(json.dumps({"type": "order", "message":"order defined"}))
+        
+        await self.broadcastPlayers(json.dumps({"type": "current turn", "message":turn_player.jsonInfo()}))
 
     async def PlayersStatusBroadcast(self):
         players_status = []

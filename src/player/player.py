@@ -59,11 +59,18 @@ class Player():
         self.dice[movId] = 0
         return True
 
-        
-
-    async def rollTheDice(self):
+    async def rollTheDice(self, define_pos = False):
         self.dice = [random.randint(1,6),random.randint(1,6)]
         await self.sendMessage(json.dumps({"type": "dice result", "message":self.dice}))
+
+        if self.dice[0] == self.dice[1] and not define_pos:
+            # Exits pawns from the jail at the start
+            if self.init_jail:
+                self.init_jail = False
+                for p in self.pawns:
+                    p.injail = False
+                await self.sendMessage(json.dumps({"type": "exit jail", "message":"Your pawns have exit jail"}))
+            
 
     def getConnection(self):
         return self.connection
