@@ -8,7 +8,7 @@ class Pawn:
         self.id = id
         self.position = position
 
-        self.injail = False
+        self.injail = True
 
     def move(self,mov):
         self.position += mov
@@ -63,13 +63,18 @@ class Player():
         self.dice = [random.randint(1,6),random.randint(1,6)]
         await self.sendMessage(json.dumps({"type": "dice result", "message":self.dice}))
 
-        if self.dice[0] == self.dice[1] and not define_pos:
+        if self.dice[0] == self.dice[1]:
             # Exits pawns from the jail at the start
-            if self.init_jail:
+            if self.init_jail and not define_pos:
                 self.init_jail = False
                 for p in self.pawns:
                     p.injail = False
                 await self.sendMessage(json.dumps({"type": "exit jail", "message":"Your pawns have exit jail"}))
+                return False
+            else:
+                return True
+        
+        return False
             
 
     def getConnection(self):
@@ -91,4 +96,13 @@ class Player():
         
         return {"id":self.id,"username":self.username,"color":self.color,"pawnsStatus":pStatus}
 
-    
+    def allPawnsInJail(self):
+        p_count = 0
+        for pw in self.pawns:
+            if pw.injail == True:
+                p_count += 1
+
+        if p_count == len(self.pawns):
+            return True
+        else:
+            return False

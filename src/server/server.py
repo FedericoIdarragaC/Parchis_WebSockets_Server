@@ -69,6 +69,10 @@ class Server:
                     print("----Connection closed----")
                     print("Player disconnected: " + ply.username +  " id: ",ply.id)
                     await self.broadcastPlayers(json.dumps({"type": "player disconnected","player":ply.jsonInfo()}))
+            if len(self.PLAYERS) < 2:
+                #TODO: Close connections
+                await self.broadcastPlayers(json.dumps({"type": "server re-started"}))
+                self.PLAYERS = []
         
         
         except (KeyError,JSONDecodeError):
@@ -95,21 +99,7 @@ class Server:
                     if data["operation"] == 1:
 
                         if self.POSITIONS_DEFINED:
-                            await ply.rollTheDice(define_pos=False)
-                            #Moving pawns (Wait for player moves distribution)
-                            self.BLOCKED = True
-                            self.TIME_BLOCKED = time.time()
-                            message2 = await ply.connection.recv()                        
-                            data = json.loads(message2)
-
-                            if data["operation"] == 2:
-                                result = ply.move_pawns_operation(data)
-                                if result:
-                                    await websocket.send(json.dumps({"type": "moved", "message":"pawns moved"}))
-                                    await self.PlayersStatusBroadcast()
-                                else:
-                                    await websocket.send(json.dumps({"type": "error", "message":"error moving pawns"}))
-                            self.BLOCKED = False
+                            await self.paws_movement(websocket,ply)
                         else:
                             await ply.rollTheDice(define_pos=True)
                             self.DICES_START.append({"player_id":ply.id,"dice_result":ply.dice[0]+ply.dice[1]})
@@ -118,6 +108,31 @@ class Server:
 
                         turn_player = self.PLAYERS[len(self.PLAYERS)-1]
                         await self.broadcastPlayers(json.dumps({"type": "current turn", "message":turn_player.jsonInfo()}))
+
+    async def paws_movement(self,websocket,ply):
+        repeat = await ply.rollTheDice(define_pos=False)
+        #Moving pawns (Wait for player moves distribution)
+        if ply.allPawnsInJail():
+            await websocket.send(json.dumps({"type": "pawns", "message":"all pawns in jail"}))
+        else:
+            self.BLOCKED = True
+            self.TIME_BLOCKED = time.time()
+            message2 = await ply.connection.recv()                        
+            data = json.loads(message2)
+
+            if data["operation"] == 2:
+                result = ply.move_pawns_operation(data)
+                if result:
+                    await websocket.send(json.dumps({"type": "moved", "message":"pawns moved"}))
+                    await self.PlayersStatusBroadcast()
+                else:
+                    await websocket.send(json.dumps({"type": "error", "message":"error moving pawns"}))
+            self.BLOCKED = False
+            
+            if repeat:
+                self.PLAYERS.remove(ply)
+                self.PLAYERS.append(ply)
+            
 
     async def startGame(self,websocket,message):
         for ply in self.PLAYERS:
@@ -155,10 +170,8 @@ class Server:
             self.PLAYERS_QUEUE.append(self.get_player_by_id(ds['player_id']))
 
         self.PLAYERS = self.PLAYERS_QUEUE  
-        turn_player = self.PLAYERS[len(self.PLAYERS)-1]
         await self.broadcastPlayers(json.dumps({"type": "order", "message":"order defined"}))
-        
-        await self.broadcastPlayers(json.dumps({"type": "current turn", "message":turn_player.jsonInfo()}))
+        self.POSITIONS_DEFINED = True
 
     async def PlayersStatusBroadcast(self):
         players_status = []
