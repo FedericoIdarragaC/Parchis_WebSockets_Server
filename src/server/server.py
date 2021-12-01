@@ -79,9 +79,9 @@ class Server:
             for ply in self.PLAYERS:
                 if ply.connection == websocket:
                     self.PLAYERS.remove(ply)
-                    self.PLAYERS.insert(0,ply)
+                    self.PLAYERS.append(ply)
             await websocket.send(json.dumps({"type": "error", "message":"Bad request"}))
-            await self.__manageConnections(websocket,path,True)            
+            await self.__manageConnections(websocket,path,False)            
              
     async def gameFlow(self,websocket,message):
         for ply in self.PLAYERS:
@@ -110,11 +110,11 @@ class Server:
                         await self.broadcastPlayers(json.dumps({"type": "current turn", "message":turn_player.jsonInfo()}))
 
     async def paws_movement(self,websocket,ply):
-        repeat = await ply.rollTheDice(define_pos=False)
+        repeat, just_exited_jail = await ply.rollTheDice(define_pos=False)
         #Moving pawns (Wait for player moves distribution)
         if ply.allPawnsInJail():
             await websocket.send(json.dumps({"type": "pawns", "message":"all pawns in jail"}))
-        else:
+        elif not just_exited_jail:
             self.BLOCKED = True
             self.TIME_BLOCKED = time.time()
             message2 = await ply.connection.recv()                        
@@ -129,9 +129,9 @@ class Server:
                     await websocket.send(json.dumps({"type": "error", "message":"error moving pawns"}))
             self.BLOCKED = False
             
-            if repeat:
-                self.PLAYERS.remove(ply)
-                self.PLAYERS.append(ply)
+        if repeat:
+            self.PLAYERS.remove(ply)
+            self.PLAYERS.append(ply)
             
 
     async def startGame(self,websocket,message):

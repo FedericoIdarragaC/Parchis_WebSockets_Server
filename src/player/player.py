@@ -20,7 +20,9 @@ class Player():
         self.connection = connection
         self.color = color
         self.start_status = False
+
         self.init_jail = True
+        self.escape_jail_attempts = 0
 
         self.dice = [0,0]
 
@@ -70,11 +72,18 @@ class Player():
                 for p in self.pawns:
                     p.injail = False
                 await self.sendMessage(json.dumps({"type": "exit jail", "message":"Your pawns have exit jail"}))
-                return False
+                return False, True
             else:
-                return True
-        
-        return False
+                return True, False
+        elif self.init_jail == True and not define_pos:
+            if self.escape_jail_attempts < 2:
+                self.escape_jail_attempts += 1
+                return True, False        
+            else:
+                self.escape_jail_attempts = 0
+                return False, False
+
+        return False, False
             
 
     def getConnection(self):
