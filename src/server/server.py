@@ -49,7 +49,7 @@ class Server:
                 else:
                     if self.STARTED:
                         timeSinceBlocked = time.time() - self.TIME_BLOCKED
-                        if timeSinceBlocked > 30:
+                        if timeSinceBlocked > 120:
                             self.BLOCKED = False
 
                         if not self.BLOCKED:
@@ -110,7 +110,7 @@ class Server:
                         await self.broadcastPlayers(json.dumps({"type": "current turn", "message":turn_player.jsonInfo()}))
 
     async def paws_movement(self,websocket,ply):
-        repeat, just_exited_jail = await ply.rollTheDice(define_pos=False)
+        repeat, just_exited_jail = await ply.rollTheDice(define_pos=False,pos_defined = self.POSITIONS_DEFINED)
         #Moving pawns (Wait for player moves distribution)
         if ply.allPawnsInJail():
             await websocket.send(json.dumps({"type": "pawns", "message":"all pawns in jail"}))
@@ -121,14 +121,31 @@ class Server:
             data = json.loads(message2)
 
             if data["operation"] == 2:
-                result = ply.move_pawns_operation(data)
-                if result:
+                result1,result2 = ply.move_pawns_operation(data)
+
+                players_without_ply = self.PLAYERS.copy()
+                players_without_ply.remove(ply)
+
+                if not result1:
+                    await websocket.send(json.dumps({"type": "error", "message":"error moving pawn1: "+str(data['pawn_1'])}))
+                else:
+                    pwn_to_jail,player = ply.validateSendToJail(data['pawn_1'],players_without_ply)
+                    if pwn_to_jail:
+                        await self.broadcastPlayers(json.dumps({"type": "pawn to jail", "pawn":pwn_to_jail.id, "player":player.jsonInfo()}))
+                if not result2:
+                    await websocket.send(json.dumps({"type": "error", "message":"error moving pawn2: "+str(data['pawn_2'])}))
+                else:
+                    pwn_to_jail,player = ply.validateSendToJail(data['pawn_2'],players_without_ply)
+                    if pwn_to_jail:
+                        await self.broadcastPlayers(json.dumps({"type": "pawn to jail", "pawn":pwn_to_jail.id, "player":player.jsonInfo()}))
+
+                if result1 or result2:
                     await websocket.send(json.dumps({"type": "moved", "message":"pawns moved"}))
                     await self.PlayersStatusBroadcast()
-                else:
-                    await websocket.send(json.dumps({"type": "error", "message":"error moving pawns"}))
+                
             self.BLOCKED = False
-            
+        elif just_exited_jail and not repeat:
+            await self.PlayersStatusBroadcast()
         if repeat:
             self.PLAYERS.remove(ply)
             self.PLAYERS.append(ply)

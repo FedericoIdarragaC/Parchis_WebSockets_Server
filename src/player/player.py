@@ -6,12 +6,17 @@ import random
 class Pawn:
     def __init__(self,id,position):
         self.id = id
+        self.init_position = position
         self.position = position
 
         self.injail = True
 
     def move(self,mov):
         self.position += mov
+
+    def go_to_jail(self):
+        self.position = self.init_position
+        self.injail = True
 
 class Player():
     def __init__(self,id,username,connection,color):
@@ -25,8 +30,8 @@ class Player():
         self.escape_jail_attempts = 0
 
         self.dice = [0,0]
-
-        self.pawns = [Pawn(n,5+17*(id-1)) for n in range(4)]
+        #5+17*(id-1)
+        self.pawns = [Pawn(n,id+4) for n in range(4)]
          
         print("New player: " + self.username +  " in color: ",self.color)
 
@@ -37,10 +42,9 @@ class Player():
         res1 = self.movePawn(p1,0)
         res2 = self.movePawn(p2,1)
 
-        if res1 and res2:
-            return True
-        else:
-            return False
+        
+        return res1,res2
+        
 
     def movePawn(self,pawnId,movId):
         pawn = self.pawns[pawnId]
@@ -61,7 +65,23 @@ class Player():
         self.dice[movId] = 0
         return True
 
-    async def rollTheDice(self, define_pos = False):
+    def validateSendToJail(self,pawnMovedId,players):
+        pwn_to_jail = None
+        pwn_ply = None
+
+        pawnMoved = self.pawns[pawnMovedId]
+        for ply in players:
+            for pwn in ply.pawns:
+                if pawnMoved.position == pwn.position:
+                    pwn.go_to_jail()
+
+                    pwn_to_jail = pwn
+                    pwn_ply = ply
+                    return pwn_to_jail,pwn_ply
+
+        return False,False
+
+    async def rollTheDice(self, define_pos = False, pos_defined = False):
         self.dice = [random.randint(1,6),random.randint(1,6)]
         await self.sendMessage(json.dumps({"type": "dice result", "message":self.dice}))
 
@@ -74,6 +94,11 @@ class Player():
                 await self.sendMessage(json.dumps({"type": "exit jail", "message":"Your pawns have exit jail"}))
                 return False, True
             else:
+                if pos_defined:
+                    for p in self.pawns:
+                        if p.injail:
+                            await self.sendMessage(json.dumps({"type": "exit jail", "message":"pawn: "+str(p.id)}))
+                            p.injail = False
                 return True, False
         elif self.init_jail == True and not define_pos:
             if self.escape_jail_attempts < 2:
