@@ -5,6 +5,7 @@ import json
 import random
 import threading
 import time
+import os
 
 
 from src.player.player import Player
@@ -25,7 +26,7 @@ class Server:
 
 
     async def __startServer(self):
-        async with websockets.serve(self.__manageConnections, "0.0.0.0", 8081):
+        async with websockets.serve(self.__manageConnections, "0.0.0.0", int(os.environ["PORT"])):
             print("--------- Server running in port: "+self.port+" ---------")
             await asyncio.Future() 
      
