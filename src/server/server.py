@@ -25,7 +25,7 @@ class Server:
 
 
     async def __startServer(self):
-        async with websockets.serve(self.__manageConnections, "localhost", 8081):
+        async with websockets.serve(self.__manageConnections, "0.0.0.0", 8081):
             print("--------- Server running in port: "+self.port+" ---------")
             await asyncio.Future() 
      
